@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dog Walker — Bark Version</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f1115"/>
+<style>
+html,body{height:100%;margin:0;background:#0f1115;color:#fff;font-family:sans-serif}
+canvas{display:block;margin:0 auto;background:#0a0c12}
+</style>
+</head>
+<body>
+<canvas id="game" width="960" height="540" tabindex="0"></canvas>
+<script>
+if('serviceWorker' in navigator){navigator.serviceWorker.register('service-worker.js');}
+
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=canvas.width,H=canvas.height;
+const walker={x:W/2,y:H/2,r:12,color:'#c6d1ff'};
+const dog={x:W/2-60,y:H/2-20,r:10,color:'#f7e08c',vx:0,vy:0};
+const bones=[],squirrels=[],otherDogs=[],barks=[];
+let score=0,stress=0,gameOver=false;
+const leashMax=140,leashSlack=leashMax*0.72;
+const barkAudio=new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=');
+
+function spawnBone(){bones.push({x:Math.random()*W,y:Math.random()*H,r:8});}
+function spawnSquirrel(){squirrels.push({x:Math.random()*W,y:Math.random()*H,r:10,vx:(Math.random()-.5)*1,vy:(Math.random()-.5)*1});}
+function spawnOtherDog(){otherDogs.push({x:Math.random()*W,y:Math.random()*H,r:12,vx:(Math.random()-.5)*0.6,vy:(Math.random()-.5)*0.6});}
+function dist(ax,ay,bx,by){return Math.hypot(ax-bx,ay-by);}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+const keys={};
+window.addEventListener('keydown',e=>keys[e.key]=true);
+window.addEventListener('keyup',e=>keys[e.key]=false);
+let lastBone=0,lastSquirrel=0,lastOtherDog=0;
+function update(dt){
+ if(keys['ArrowLeft']||keys['a']) walker.x-=2*dt;
+ if(keys['ArrowRight']||keys['d']) walker.x+=2*dt;
+ if(keys['ArrowUp']||keys['w']) walker.y-=2*dt;
+ if(keys['ArrowDown']||keys['s']) walker.y+=2*dt;
+ walker.x=clamp(walker.x,0,W); walker.y=clamp(walker.y,0,H);
+ const dx=walker.x-dog.x,dy=walker.y-dog.y,len=Math.hypot(dx,dy)||1;
+ dog.vx+=(dx/len)*0.05; dog.vy+=(dy/len)*0.05; dog.vx*=0.9; dog.vy*=0.9;
+ dog.x+=dog.vx*dt; dog.y+=dog.vy*dt;
+ const now=performance.now();
+ if(now-lastBone>2000){spawnBone();lastBone=now;}
+ if(now-lastSquirrel>4000){spawnSquirrel();lastSquirrel=now;}
+ if(now-lastOtherDog>3000){spawnOtherDog();lastOtherDog=now;}
+ for(let i=bones.length-1;i>=0;i--){
+   if(dist(dog.x,dog.y,bones[i].x,bones[i].y)<dog.r+bones[i].r){score+=5;bones.splice(i,1);}
+ }
+ for(const s of squirrels){s.x+=s.vx*dt; s.y+=s.vy*dt;}
+ for(const od of otherDogs){od.x+=od.vx*dt; od.y+=od.vy*dt;}
+ const leash=dist(walker.x,walker.y,dog.x,dog.y);
+ if(leash>leashMax) stress+=0.05*dt; else if(leash<leashSlack) stress-=0.02*dt;
+ for(const od of otherDogs){
+   if(dist(dog.x,dog.y,od.x,od.y)<60){
+     stress+=0.04*dt;
+     barks.push({x:dog.x,y:dog.y-20,life:30});
+     barkAudio.currentTime=0; barkAudio.play();
+   }
+ }
+ stress=clamp(stress,0,100);
+ if(stress>=100) gameOver=true;
+ for(let i=barks.length-1;i>=0;i--){barks[i].life--;if(barks[i].life<=0)barks.splice(i,1);}
+}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ ctx.beginPath();ctx.moveTo(walker.x,walker.y);ctx.lineTo(dog.x,dog.y);
+ ctx.strokeStyle='#6ae38a';ctx.stroke();
+ ctx.fillStyle='#a8ffd0';for(const b of bones){ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fill();}
+ ctx.fillStyle='#f0c9a5';for(const s of squirrels){ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();}
+ ctx.fillStyle='#ff9b9b';for(const od of otherDogs){ctx.beginPath();ctx.arc(od.x,od.y,od.r,0,Math.PI*2);ctx.fill();}
+ ctx.fillStyle=walker.color;ctx.beginPath();ctx.arc(walker.x,walker.y,walker.r,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle=dog.color;ctx.beginPath();ctx.arc(dog.x,dog.y,dog.r,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='white';ctx.font='bold 14px sans-serif';ctx.textAlign='center';
+ for(const b of barks){ctx.globalAlpha=b.life/30;ctx.fillText('BARK!',b.x,b.y);ctx.globalAlpha=1;}
+ ctx.fillStyle='#fff';ctx.textAlign='left';ctx.fillText(`Score: ${Math.floor(score)}`,10,20);
+ ctx.fillText(`Stress: ${Math.floor(stress)}%`,10,40);
+ if(gameOver) ctx.fillText("Game Over",W/2-30,H/2);
+}
+let last=performance.now();
+function loop(now){const dt=(now-last)/16; last=now; if(!gameOver) update(dt); draw(); requestAnimationFrame(loop);} requestAnimationFrame(loop);
+</script>
+</body>
+</html>
